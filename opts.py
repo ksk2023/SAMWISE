@@ -52,6 +52,24 @@ def get_args_parser():
     parser.add_argument('--cme_decision_window', default=4, type=int,
                         help="Minimum number of frames considered between consecutive CME decisions")
 
+    # Long-term and Short-term Memory Bank settings
+    parser.add_argument('--use_dual_memory', default=False, action='store_true',
+                        help="Enable long-term and short-term memory bank separation")
+    parser.add_argument('--short_term_capacity', default=10, type=int,
+                        help="Maximum number of frames in short-term memory (FIFO)")
+    parser.add_argument('--long_term_capacity', default=20, type=int,
+                        help="Maximum number of frames in long-term memory")
+    parser.add_argument('--object_score_threshold', default=0.0, type=float,
+                        help="Threshold for object score filtering (step 1)")
+    parser.add_argument('--iou_threshold', default=0.7, type=float,
+                        help="Threshold for IoU filtering (step 2)")
+    parser.add_argument('--mask_consistency_threshold', default=0.8, type=float,
+                        help="Threshold for multimask consistency check (step 3)")
+    parser.add_argument('--similarity_threshold', default=0.85, type=float,
+                        help="Threshold for mask similarity with long-term memory")
+    parser.add_argument('--frame_sampling_interval', default=3, type=int,
+                        help="Interval for frame sampling (e.g., every N frames)")
+
 
     # dataset settings
     # ['ytvos', 'davis', 'refcoco', 'refcoco+', 'refcocog', 'all']

@@ -425,7 +425,11 @@ class SAM2Base(torch.nn.Module):
             obj_ptr,
             sam_early_output_token,
             object_score_logits,
-            backbone_features
+            backbone_features,
+            None,  # masks - computed later
+            low_res_multimasks,  # Store all masks for consistency check
+            high_res_multimasks,  # Store all high-res masks
+            ious if multimask_output else None  # Store all IoUs
         )
         return out
 

@@ -13,6 +13,7 @@ from models.conditional_memory_encoder import ConditionalMemoryEncoder
 from fairseq.models.roberta import RobertaModel
 from models.model_utils import BackboneOutput, DecoderOutput, get_same_object_labels
 from transformers import RobertaTokenizerFast
+from models.memory_bank_manager import MemoryBankManager
 
 
 class SAMWISE(nn.Module):
@@ -48,7 +49,9 @@ class SAMWISE(nn.Module):
                                         HSA_patch_size=args.HSA_patch_size[i] if len(args.HSA_patch_size)>1 else args.HSA_patch_size[0],
                                         args=args))
 
-        self.memory_bank = {} # to store all frames memory
+        # Initialize Memory Bank Manager
+        self.memory_bank_manager = MemoryBankManager(args)
+        self.memory_bank = {} # to store all frames memory (backward compatibility)
 
         self.fusion_stages_txt = fusion_stages_txt
         self.fusion_stages_vis = sam.image_encoder.trunk.stage_ends
@@ -58,6 +61,7 @@ class SAMWISE(nn.Module):
         self.use_cme_head = args.use_cme_head
         self.cme_decision_window = args.cme_decision_window # minimum number of frames between each CME application
         self.switch_mem = args.switch_mem
+        self.use_dual_memory = args.use_dual_memory
 
 
     def forward(self, samples, captions, targets):
@@ -78,8 +82,10 @@ class SAMWISE(nn.Module):
         for video_record in range(B):
             if self.training or T==1: # T == 1 for pre-training, no propagation from memory bank
                 self.memory_bank, self.last_frame_cme_applied = {}, 0
+                self.memory_bank_manager.reset()
             elif targets[0]['frame_ids'][0] == 0:  # it's the first frame of a new video
                 self.memory_bank, self.last_frame_cme_applied = {}, 0
+                self.memory_bank_manager.reset()
 
             for frame_idx in range(T):
                 idx = video_record * T + frame_idx
@@ -119,7 +125,18 @@ class SAMWISE(nn.Module):
                             outputs["cme_label"].append(cme_label)
 
                 mem_dict_w_mem = self.compute_memory_bank_dict(decoder_out_w_mem, current_vision_feats, backbone_output.feat_sizes)
-                self.memory_bank[memory_idx] = mem_dict_w_mem
+
+                # Use new memory bank manager if enabled
+                if self.use_dual_memory:
+                    self.memory_bank_manager.store_to_memory(
+                        memory_idx, mem_dict_w_mem, decoder_out_w_mem
+                    )
+                    # Update unified memory bank for backward compatibility
+                    self.memory_bank = self.memory_bank_manager.get_memory_bank_for_retrieval()
+                else:
+                    # Original behavior
+                    self.memory_bank[memory_idx] = mem_dict_w_mem
+
                 outputs["masks"].append(decoder_out_w_mem.masks)
 
         masks = torch.cat(outputs["masks"])
@@ -178,7 +195,7 @@ class SAMWISE(nn.Module):
         current_vision_pos_embeds = backbone_out.get_current_pos_embeds(idx)
         # take only the highest res feature map
         high_res_features = backbone_out.get_high_res_features(current_vision_feats)
-        
+
         pix_feat_with_mem = self._prepare_memory_conditioned_features(
             # it's absolute frame ID in eval, relative in the clip during train
             frame_idx=memory_idx,
@@ -188,11 +205,17 @@ class SAMWISE(nn.Module):
             num_frames=memory_idx+1, # how many obj_ptr to take from mem
             memory_bank=memory_bank
         )
+
+        # Determine if we should use multimask output for filtering
+        use_multimask = (self.use_dual_memory and
+                        self.memory_bank_manager.should_apply_filtering(memory_idx))
+
         decoder_out: DecoderOutput = self.sam._forward_sam_heads(
             backbone_features=pix_feat_with_mem,
             text_inputs=backbone_out.state[idx:idx+1],
             motion_inputs=backbone_out.motion_state[idx:idx+1] if self.motion_prompt else None,
             high_res_features=high_res_features,
+            multimask_output=use_multimask,
         )
         decoder_out.compute_mask(self.image_size, backbone_out.orig_size[idx])
         return decoder_out

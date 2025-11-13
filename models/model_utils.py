@@ -14,6 +14,10 @@ class DecoderOutput:
     object_score_logits: Tensor = None
     pix_feat_with_mem: Tensor = None
     masks: Tensor = None
+    # New fields for multimask support
+    low_res_multimasks: Tensor = None  # All 3 masks for consistency check
+    high_res_multimasks: Tensor = None  # All 3 high-res masks
+    multimask_ious: Tensor = None  # IoU for each of the 3 masks
 
     def compute_mask(self, image_size, original_size):
         assert self.low_res_masks is not None, 'before calling compute_mask you have to set \'low_res_masks\''
