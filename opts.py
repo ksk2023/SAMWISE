@@ -52,23 +52,33 @@ def get_args_parser():
     parser.add_argument('--cme_decision_window', default=4, type=int,
                         help="Minimum number of frames considered between consecutive CME decisions")
 
-    # Long-term and Short-term Memory Bank settings
+    # Long-term and Short-term Memory Bank settings (Enhanced v2)
     parser.add_argument('--use_dual_memory', default=False, action='store_true',
                         help="Enable long-term and short-term memory bank separation")
-    parser.add_argument('--short_term_capacity', default=10, type=int,
-                        help="Maximum number of frames in short-term memory (FIFO)")
-    parser.add_argument('--long_term_capacity', default=20, type=int,
-                        help="Maximum number of frames in long-term memory")
+    parser.add_argument('--short_term_capacity', default=7, type=int,
+                        help="Maximum number of frames in short-term memory (FIFO, 7 is optimal for temporal continuity)")
+    parser.add_argument('--long_term_capacity', default=15, type=int,
+                        help="Maximum number of frames in long-term memory (15 provides good coverage)")
     parser.add_argument('--object_score_threshold', default=0.0, type=float,
-                        help="Threshold for object score filtering (step 1)")
-    parser.add_argument('--iou_threshold', default=0.7, type=float,
-                        help="Threshold for IoU filtering (step 2)")
-    parser.add_argument('--mask_consistency_threshold', default=0.8, type=float,
-                        help="Threshold for multimask consistency check (step 3)")
-    parser.add_argument('--similarity_threshold', default=0.85, type=float,
-                        help="Threshold for mask similarity with long-term memory")
+                        help="Threshold for object score filtering (step 1, 0.0 means no filtering)")
+    parser.add_argument('--iou_threshold', default=0.5, type=float,
+                        help="Threshold for IoU filtering (step 2, 0.5 is more balanced)")
+    parser.add_argument('--mask_consistency_threshold', default=0.7, type=float,
+                        help="Threshold for multimask consistency check (step 3, 0.7 detects moderate inconsistency)")
+    parser.add_argument('--similarity_threshold', default=0.80, type=float,
+                        help="Threshold for mask similarity with long-term memory (0.80 balances redundancy)")
     parser.add_argument('--frame_sampling_interval', default=3, type=int,
-                        help="Interval for frame sampling (e.g., every N frames)")
+                        help="Base interval for frame sampling (adaptive sampling adjusts this)")
+
+    # Enhanced dual memory parameters
+    parser.add_argument('--temporal_decay_factor', default=0.95, type=float,
+                        help="Temporal decay factor for similarity calculation")
+    parser.add_argument('--quality_score_threshold', default=0.5, type=float,
+                        help="Threshold for overall quality score")
+    parser.add_argument('--enable_adaptive_sampling', default=True, action='store_true',
+                        help="Enable adaptive frame sampling based on content change")
+    parser.add_argument('--disable_adaptive_sampling', dest='enable_adaptive_sampling', action='store_false',
+                        help="Disable adaptive frame sampling")
 
 
     # dataset settings

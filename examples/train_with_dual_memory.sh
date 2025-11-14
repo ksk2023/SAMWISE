@@ -14,15 +14,20 @@ BATCH_SIZE=2
 NUM_FRAMES=8
 EPOCHS=6
 
-# Dual Memory Bank settings
+# Dual Memory Bank settings (Enhanced v2 with optimized defaults)
 USE_DUAL_MEMORY="--use_dual_memory"
-SHORT_TERM_CAPACITY=10
-LONG_TERM_CAPACITY=20
-OBJECT_SCORE_THRESHOLD=0.0
-IOU_THRESHOLD=0.7
-MASK_CONSISTENCY_THRESHOLD=0.8
-SIMILARITY_THRESHOLD=0.85
-FRAME_SAMPLING_INTERVAL=3
+SHORT_TERM_CAPACITY=7          # v2: Reduced from 10 to 7 for better balance
+LONG_TERM_CAPACITY=15          # v2: Reduced from 20 to 15 for efficiency
+OBJECT_SCORE_THRESHOLD=0.0     # 0.0 = no filtering on object score
+IOU_THRESHOLD=0.5              # v2: Lowered from 0.7 to reduce over-filtering
+MASK_CONSISTENCY_THRESHOLD=0.7 # v2: Lowered from 0.8 for better extreme case detection
+SIMILARITY_THRESHOLD=0.80      # v2: Lowered from 0.85 to reduce redundancy
+FRAME_SAMPLING_INTERVAL=3      # Base interval (adaptive sampling adjusts dynamically)
+
+# Enhanced v2 parameters
+QUALITY_SCORE_THRESHOLD=0.5    # Overall quality threshold for graded storage
+ENABLE_ADAPTIVE_SAMPLING="--enable_adaptive_sampling"  # Content-aware sampling
+TEMPORAL_DECAY_FACTOR=0.95     # Temporal decay for similarity calculation
 
 # CME settings (optional, can be used together)
 USE_CME=""  # Add "--use_cme_head" to enable
@@ -60,6 +65,9 @@ python main.py \
     --mask_consistency_threshold $MASK_CONSISTENCY_THRESHOLD \
     --similarity_threshold $SIMILARITY_THRESHOLD \
     --frame_sampling_interval $FRAME_SAMPLING_INTERVAL \
+    --quality_score_threshold $QUALITY_SCORE_THRESHOLD \
+    $ENABLE_ADAPTIVE_SAMPLING \
+    --temporal_decay_factor $TEMPORAL_DECAY_FACTOR \
     $USE_CME \
     --cme_decision_window $CME_DECISION_WINDOW \
     --fusion_stages 1 2 3 \

@@ -207,8 +207,9 @@ class SAMWISE(nn.Module):
         )
 
         # Determine if we should use multimask output for filtering
+        # Note: passing decoder_out=None here uses historical frame changes for adaptive sampling
         use_multimask = (self.use_dual_memory and
-                        self.memory_bank_manager.should_apply_filtering(memory_idx))
+                        self.memory_bank_manager.should_apply_filtering(memory_idx, decoder_out=None))
 
         decoder_out: DecoderOutput = self.sam._forward_sam_heads(
             backbone_features=pix_feat_with_mem,
