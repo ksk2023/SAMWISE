@@ -10,10 +10,12 @@ from omegaconf import OmegaConf
 import os
 import py3_wget
 from models.conditional_memory_encoder import ConditionalMemoryEncoder
+from models.attention_cme import AttentionCME, build_attention_cme
 from fairseq.models.roberta import RobertaModel
 from models.model_utils import BackboneOutput, DecoderOutput, get_same_object_labels
 from transformers import RobertaTokenizerFast
 from models.memory_bank_manager import MemoryBankManager
+from models.memory_bank_manager_v3 import MemoryBankManagerV3
 
 
 class SAMWISE(nn.Module):
@@ -49,8 +51,12 @@ class SAMWISE(nn.Module):
                                         HSA_patch_size=args.HSA_patch_size[i] if len(args.HSA_patch_size)>1 else args.HSA_patch_size[0],
                                         args=args))
 
-        # Initialize Memory Bank Manager
-        self.memory_bank_manager = MemoryBankManager(args)
+        # Initialize Memory Bank Manager (use v3 for enhanced dual memory)
+        use_v3 = getattr(args, 'use_memory_bank_v3', True)  # default to v3 for better performance
+        if args.use_dual_memory and use_v3:
+            self.memory_bank_manager = MemoryBankManagerV3(args)
+        else:
+            self.memory_bank_manager = MemoryBankManager(args)
         self.memory_bank = {} # to store all frames memory (backward compatibility)
 
         self.fusion_stages_txt = fusion_stages_txt
@@ -59,6 +65,7 @@ class SAMWISE(nn.Module):
         self.image_size = image_size
 
         self.use_cme_head = args.use_cme_head
+        self.use_attention_cme = getattr(args, 'use_attention_cme', False)  # use enhanced attention-based CME
         self.cme_decision_window = args.cme_decision_window # minimum number of frames between each CME application
         self.switch_mem = args.switch_mem
         self.use_dual_memory = args.use_dual_memory
@@ -105,8 +112,27 @@ class SAMWISE(nn.Module):
                     if memory_idx - self.last_frame_cme_applied >= self.cme_decision_window-1 and memory_idx>self.cme_decision_window:
                         # memory-less prediction
                         decoder_out_no_mem_cme: DecoderOutput = self.compute_decoder_out_no_mem(backbone_output, idx)
-                        pred_cme_logits = self.conditional_memory_encoder(decoder_out_w_mem.obj_ptr.detach(),
-                                                                          decoder_out_no_mem_cme.early_obj_ptr.detach())
+
+                        # Use AttentionCME or original CME
+                        if self.use_attention_cme:
+                            # AttentionCME returns: decision_logits, fused_features, attention_maps, gate_weights
+                            pred_cme_logits, fused_features, attention_maps, gate_weights = self.conditional_memory_encoder(
+                                decoder_out_w_mem.obj_ptr.detach(),
+                                decoder_out_no_mem_cme.early_obj_ptr.detach()
+                            )
+                            # Store attention maps for analysis during training
+                            if self.training:
+                                if 'cme_attention_maps' not in outputs:
+                                    outputs['cme_attention_maps'] = []
+                                    outputs['cme_gate_weights'] = []
+                                outputs['cme_attention_maps'].append({k: v.detach().cpu() for k, v in attention_maps.items()})
+                                outputs['cme_gate_weights'].append(gate_weights.detach().cpu())
+                        else:
+                            # Original CME
+                            pred_cme_logits = self.conditional_memory_encoder(
+                                decoder_out_w_mem.obj_ptr.detach(),
+                                decoder_out_no_mem_cme.early_obj_ptr.detach()
+                            )
 
                         if pred_cme_logits.argmax().item() == 1 and not self.training:  # not training and switch
                             decoder_out_w_mem = self.apply_decision(decoder_out_w_mem, decoder_out_no_mem_cme)
@@ -128,9 +154,19 @@ class SAMWISE(nn.Module):
 
                 # Use new memory bank manager if enabled
                 if self.use_dual_memory:
-                    self.memory_bank_manager.store_to_memory(
-                        memory_idx, mem_dict_w_mem, decoder_out_w_mem
-                    )
+                    # Extract object features for v3 feature-level similarity
+                    # Use obj_ptr as the compact object representation
+                    object_features = decoder_out_w_mem.obj_ptr.detach() if hasattr(decoder_out_w_mem, 'obj_ptr') else None
+
+                    # v3 accepts object_features parameter, v2 ignores it
+                    if isinstance(self.memory_bank_manager, MemoryBankManagerV3):
+                        self.memory_bank_manager.store_to_memory(
+                            memory_idx, mem_dict_w_mem, decoder_out_w_mem, object_features=object_features
+                        )
+                    else:
+                        self.memory_bank_manager.store_to_memory(
+                            memory_idx, mem_dict_w_mem, decoder_out_w_mem
+                        )
                     # Update unified memory bank for backward compatibility
                     self.memory_bank = self.memory_bank_manager.get_memory_bank_for_retrieval()
                 else:
@@ -474,8 +510,12 @@ def build_samwise(args):
     sam.load_state_dict(state_dict, strict=False)
     sam_embed_dim = cfg.model.image_encoder.neck.backbone_channel_list[::-1][1:]
 
-    # build Conditional Memory Encoder
-    conditional_memory_encoder = ConditionalMemoryEncoder(sam.hidden_dim)
+    # build Conditional Memory Encoder (AttentionCME or original CME)
+    use_attention_cme = getattr(args, 'use_attention_cme', False)
+    if use_attention_cme:
+        conditional_memory_encoder = build_attention_cme(args)
+    else:
+        conditional_memory_encoder = ConditionalMemoryEncoder(sam.hidden_dim)
 
     ## Samwise
     model = SAMWISE(
@@ -492,9 +532,12 @@ def build_samwise(args):
     )
 
 
-    # freeze all the weights except CMT adapter and Conditional Memory Encoder
+    # freeze all the weights except CMT adapter, Conditional Memory Encoder, and AttentionCME
     for param_name, param in model.named_parameters():
-        if 'adapter' not in param_name and 'conditional_memory_encoder' not in param_name and 'project_text' not in param_name:
+        if ('adapter' not in param_name and
+            'conditional_memory_encoder' not in param_name and
+            'attention_cme' not in param_name and
+            'project_text' not in param_name):
             param.requires_grad = False
 
     os.environ["TOKENIZERS_PARALLELISM"] = "false"

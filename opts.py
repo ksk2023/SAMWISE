@@ -52,6 +52,16 @@ def get_args_parser():
     parser.add_argument('--cme_decision_window', default=4, type=int,
                         help="Minimum number of frames considered between consecutive CME decisions")
 
+    # AttentionCME settings (enhanced CME with cross-modal attention)
+    parser.add_argument('--use_attention_cme', default=False, action='store_true',
+                        help="Use AttentionCME (attention-weighted feature fusion) instead of original CME")
+    parser.add_argument('--cme_num_heads', default=8, type=int,
+                        help="Number of attention heads in AttentionCME")
+    parser.add_argument('--cme_dropout', default=0.1, type=float,
+                        help="Dropout rate in AttentionCME")
+    parser.add_argument('--cme_use_decision_token', default=False, action='store_true',
+                        help="Use decision token in AttentionCME (similar to original CME)")
+
     # Long-term and Short-term Memory Bank settings (Enhanced v2)
     parser.add_argument('--use_dual_memory', default=False, action='store_true',
                         help="Enable long-term and short-term memory bank separation")
@@ -70,7 +80,7 @@ def get_args_parser():
     parser.add_argument('--frame_sampling_interval', default=3, type=int,
                         help="Base interval for frame sampling (adaptive sampling adjusts this)")
 
-    # Enhanced dual memory parameters
+    # Enhanced dual memory parameters (v2)
     parser.add_argument('--temporal_decay_factor', default=0.95, type=float,
                         help="Temporal decay factor for similarity calculation")
     parser.add_argument('--quality_score_threshold', default=0.5, type=float,
@@ -79,6 +89,20 @@ def get_args_parser():
                         help="Enable adaptive frame sampling based on content change")
     parser.add_argument('--disable_adaptive_sampling', dest='enable_adaptive_sampling', action='store_false',
                         help="Disable adaptive frame sampling")
+
+    # Enhanced dual memory parameters (v3)
+    parser.add_argument('--use_memory_bank_v3', default=True, action='store_true',
+                        help="Use v3 memory bank with feature-level similarity and dynamic thresholds")
+    parser.add_argument('--disable_memory_bank_v3', dest='use_memory_bank_v3', action='store_false',
+                        help="Disable v3 memory bank and use v2")
+    parser.add_argument('--feature_similarity_weight', default=0.5, type=float,
+                        help="Weight for blending mask IoU and feature cosine similarity (0.5 = equal blend)")
+    parser.add_argument('--enable_dynamic_thresholds', default=True, action='store_true',
+                        help="Enable dynamic threshold adjustment based on video difficulty")
+    parser.add_argument('--disable_dynamic_thresholds', dest='enable_dynamic_thresholds', action='store_false',
+                        help="Disable dynamic threshold adjustment")
+    parser.add_argument('--importance_score_threshold', default=0.6, type=float,
+                        help="Minimum importance score for long-term memory storage (0.6 is balanced)")
 
 
     # dataset settings
